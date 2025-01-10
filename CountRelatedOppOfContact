@@ -1,0 +1,77 @@
+//show count of related opportunity of contact on account.
+
+public with sharing class CountRelatedOppOfContact {
+    public static void CountRelatedOpp(List<Opportunity> newOpp, Map<Id, Opportunity> oldOpp) {
+        
+        Set<Id> conIds = new Set<Id>();
+        if(newOpp != null && !newOpp.isEmpty()) {
+            for(Opportunity opp : newOpp) {
+                if(opp.ContactOpp__c != null){
+                    conIds.add(opp.ContactOpp__c);
+                    System.debug('conIds----->'+conIds);
+                }
+            }
+        }
+        System.debug('conIds----->'+conIds);
+		if(oldOpp != null && !oldOpp.isEmpty()) {
+            for(Opportunity opp : oldOpp.values()) {
+                if(opp.ContactOpp__c != null && !conIds.contains(opp.ContactOpp__c)){
+                    conIds.add(opp.ContactOpp__c);
+                }
+            }
+        }
+        System.debug('conIds----->'+conIds);
+        if(conIds.isEmpty()) {
+            return;
+        }
+        
+        Map<Id, Id> conAccMap = new Map<Id, Id>();
+        for(Contact con : [
+            SELECT Id, AccountId
+            FROM Contact
+            WHERE Id IN: conIds]){
+                if(con.AccountId != null) {
+                    conAccMap.put(con.Id, con.AccountId);
+                }
+            }
+        System.debug('conAccmap'+conAccMap);
+             
+        Map<Id, Integer> conOppMap = new Map<Id, Integer>();
+        for( AggregateResult aggr : [
+            SELECT ContactOpp__c, COUNT(Id) oppCount 
+            FROM Opportunity
+            WHERE ContactOpp__c IN : conIds AND ContactOpp__c != null
+            GROUP BY ContactOpp__c
+        ]) {
+            conOppMap.put((Id)aggr.get('ContactOpp__c'),(Integer)aggr.get('oppCount'));		//Explicit type conversion
+            System.debug('conOppMap-------->'+conOppMap);
+            }
+        
+        Map<Id, Integer> accOppMap = new Map<Id, Integer>();
+        for(Id ContactId : conAccMap.keySet()) {
+            Id AccountId = conAccMap.get(ContactId);
+            Integer oppCount = conOppMap.containsKey(ContactId) ? conOppMap.get(ContactId) : 0;
+			
+            if(!accOppMap.containsKey(AccountId)) {
+                accOppMap.put(AccountId, 0);
+            }
+            accOppMap.put(AccountId, accOppMap.get(AccountId) + oppCount);
+        }
+        
+        List<Account> accList = new List<Account>();
+        for(Id AccountId : accOppMap.keySet()) {
+            Account acc = new Account(Id = AccountId);
+            acc.OppCount__c = accOppMap.get(AccountId);
+            accList.add(acc);
+            System.debug('accList-------->'+accList);
+        }
+        
+        if(!accList.isEmpty()) {
+            try {
+                update accList;
+            } catch (DmlException e) {
+                System.debug('Error updating in count of Opportunity' + e.getMessage());
+            }
+        }
+    }
+}
