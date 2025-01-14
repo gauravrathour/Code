@@ -1,0 +1,59 @@
+public class CountRelatedOliOfOppTriggerHandler {
+    public static void countRelatedOli(List<OpportunityLineItem> newOLI, Map<Id, OpportunityLineItem> oldOLI) {
+        
+        Set<Id> oppIds = new Set<Id>();
+        if(newOLI != null && !newOLI.isEmpty()) {
+            for(OpportunityLineItem oli : newOLI) {
+            	if(oli.OpportunityId != null) {
+                	oppIds.add(oli.OpportunityId);
+            	}
+        	}
+        }
+        System.debug('oppIds12'+oppIds);
+        if(oldOLI != null && !oldOLI.isEmpty()) {
+            for(OpportunityLineItem oli : oldOLI.values()) {
+                if(oli.OpportunityId != null && !oppIds.contains(oli.OpportunityId)) {
+                    oppIds.add(oli.OpportunityId);
+                }
+            }
+        }
+        System.debug('oppIds20'+oppIds);
+        if(oppIds.isEmpty()) {
+            return;
+        }
+        
+        Map<Id, Id> oppAccMap = new Map<Id, Id>();
+        for(Opportunity opp : [SELECT Id, AccountId
+                              FROM Opportunity
+                               WHERE Id IN :oppIds]) {
+                                   if(opp.AccountId != null) {
+                                       oppAccMap.put(opp.Id, opp.AccountId);
+                                   }   
+                               }
+        Set<Id> accountIds = new Set<Id>(oppAccMap.values());
+        System.debug('oppAccMap34' + oppAccMap);
+        Map<Id, Integer> accOLIMap = new Map<Id, Integer>();
+        for(AggregateResult aggr : [SELECT Opportunity.AccountId accountId, COUNT(Id) oliCount
+                                   FROM OpportunityLineItem
+                                    WHERE Opportunity.AccountId IN: accountIds AND Opportunity.AccountId != null
+                                   GROUP BY Opportunity.AccountId
+                                   ]) {
+                                          accOLIMap.put((Id)aggr.get('accountId'), (Integer)aggr.get('oliCount'));
+                                    }
+        System.debug('accOLIMap'+ accOLIMap);
+       	List<Account> accList = new List<Account>();
+        for(Id accountId : accountIds) {
+            Integer oliCount = accOLIMap.containsKey(accountId) ? accOLIMap.get(accountId) : 0;
+            accList.add(new Account(Id = accountId, TotalOppProducts__c = oliCount));
+            
+        }
+        System.debug('accList50' + accList);
+        if(!accList.isEmpty()) {
+            try {
+                update accList;
+            } catch (DmlException e) {
+                System.debug('Error updating in count of opportunity' + e.getMessage());
+            }
+        }
+    }
+}
