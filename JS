@@ -1,0 +1,571 @@
+import { LightningElement, api, track, wire } from 'lwc';
+
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+import { CloseActionScreenEvent } from "lightning/actions";
+
+import { getObjectInfo, getPicklistValues } from "lightning/uiObjectInfoApi";
+import Product_OBJECT from "@salesforce/schema/Product2";
+import FAMILY_FIELD from "@salesforce/schema/Product2.Family";
+
+import getLaundryItemList from '@salesforce/apex/CustomAddProductsHandler.getLaundryItemList';
+import insertLaundryLineItems from '@salesforce/apex/CustomAddProductsHandler.insertLaundryLineItems';
+
+// import saveLineItems from '@salesforce/apex/CustomAddProductsHandler.saveLineItems';
+
+import LAUNDRY_LINE_ITEM_OBJECT from '@salesforce/schema/Laundry_Line_item__c';
+import CATEGORY_FIELD from '@salesforce/schema/Laundry_Line_item__c.Category__c';
+
+const firstScreenColumns = [
+    {
+        label: 'Laundry Item Name',
+        fieldName: 'recordLink',
+        type: 'url',
+        typeAttributes: {
+            label: { fieldName: 'Name' },
+            target: '_blank'
+        },
+        sortable: true
+    },
+    {
+        label: 'Item Code',
+        fieldName: 'Item__c',
+        type: 'text',
+        sortable: true
+    }
+];
+
+const secondScreenColumns = [
+    {
+        label: 'Laundry Item Name',
+        fieldName: 'recordLink',
+        type: 'url',
+        typeAttributes: {
+            label: { fieldName: 'Name' },
+            target: '_blank'
+        },
+        editable: false,
+        sortable: false,
+        hideDefaultActions: true
+    },
+    {
+        label: 'Item Code',
+        fieldName: 'Item__c',
+        type: 'text',
+        editable: false,
+        sortable: false,
+        hideDefaultActions: true
+    },
+    {
+        label: 'Quantity',
+        fieldName: 'Quantity',
+        type: 'number',
+        editable: true,
+        required: true,
+        sortable: false,
+        hideDefaultActions: true,
+        cellAttributes: {
+            alignment: 'left'
+        }
+    },
+    {
+        type: 'action',
+        typeAttributes: {
+            rowActions: [
+                { label: 'Delete', name: 'DELETE' }
+            ]
+        }
+    }
+];
+
+const thirdScreenColumns = [
+    {
+        label: 'Laundry Item Name',
+        fieldName: 'recordLink',
+        type: 'url',
+        typeAttributes: {
+            label: { fieldName: 'Name' },
+            target: '_blank'
+        },
+        editable: false,
+        sortable: false,
+        hideDefaultActions: true
+    },
+    {
+        label: 'Item Code',
+        fieldName: 'Item__c',
+        type: 'text',
+        editable: false,
+        sortable: false,
+        hideDefaultActions: true
+    },
+    {
+        label: 'Quantity',
+        fieldName: 'Quantity',
+        type: 'number',
+        editable: false,
+        required: true,
+        sortable: false,
+        hideDefaultActions: true,
+        cellAttributes: {
+            alignment: 'left'
+        }
+    },
+    {
+        label: 'Category',
+        fieldName: 'Category',
+        type: 'multiselectpicklistColumn',
+        required: true, //rp
+        editable: false, typeAttributes: {
+            placeholder: 'Choose Type', options: { fieldName: 'pickListOptions' },
+            value: { fieldName: 'Category__c' }, // default value for picklist,
+            context: { fieldName: 'uniqueKey' } // binding account Id with context variable to be returned back
+        }
+    }
+];
+
+export default class CustomAddProducts extends LightningElement {
+    @api recordId;
+    masterdData = [];
+    @track selectedRows = [];
+    @track filteredData = [];
+    @track selectedRowsIds = [];
+    @track selectedRowsToInsert = [];
+
+    firstScreenColumns = firstScreenColumns;
+    secondScreenColumns = secondScreenColumns;
+    thirdScreenColumns = thirdScreenColumns;
+
+    showFirstScreen = true;
+    showSecondScreen = false;
+    showThirdScreen = false;
+
+    isFilterVisible = false;
+    isLoading = false;
+    isApplyDisable = true;
+
+    productRecordTypeId;
+    familyOptions;
+    productCodeFilterValue = '';
+    productFamilyFilterValue = [];
+
+    @track pickListOptions;
+    @track draftValues = [];
+    lastSavedData = [];
+
+    @wire(getObjectInfo, { objectApiName: LAUNDRY_LINE_ITEM_OBJECT })
+    objectInfo;
+
+    //fetch picklist options
+    @wire(getPicklistValues, {
+        recordTypeId: "$objectInfo.data.defaultRecordTypeId",
+        fieldApiName: CATEGORY_FIELD
+    })
+
+    wirePickList({ error, data }) {
+        if (data) {
+            this.pickListOptions = data.values;
+        } else if (error) {
+            console.log(error);
+        }
+    }
+
+    @wire(getObjectInfo, { objectApiName: Product_OBJECT })
+    results({ error, data }) {
+        if (data) {
+            this.productRecordTypeId = data.defaultRecordTypeId;
+        } else if (error) {
+            this.productRecordTypeId = undefined;
+            this.showToast('Error', error.body ? error.body.message : '', 'error');
+        }
+    }
+
+    @wire(getPicklistValues, { recordTypeId: "$productRecordTypeId", fieldApiName: FAMILY_FIELD })
+    picklistResults({ error, data }) {
+        if (data) {
+            this.familyOptions = data.values.map(item => ({
+                label: item.label,
+                value: item.value
+            }));
+        } else if (error) {
+            this.familyOptions = undefined;
+            this.showToast('Error', error.body ? error.body.message : '', 'error');
+        }
+    }
+
+    @wire(getLaundryItemList, { pickList: '$pickListOptions' })
+    wiredProducts({ error, data }) {
+        if (data) {
+            let parseData = JSON.parse(JSON.stringify(data));
+            console.log('getLaundryItemList:', parseData);
+
+            parseData.forEach(element => {
+                element.recordLink = '/' + element.Id;
+                if (this.pickListOptions) {
+                    element.pickListOptions = this.pickListOptions;
+                }
+            });
+
+            this.lastSavedData = JSON.parse(JSON.stringify(parseData));
+            this.filteredData = parseData;
+            this.masterdData = parseData;
+            this.hideSpinner();
+
+            console.log('getLaundryItemList:', parseData);
+        } else if (data == null) {
+            console.log('Error_Null_Data>>');
+            this.showToast('Error', 'Error getting records!!', 'error');
+        } else if (error) {
+            console.log('Error>>', error);
+            this.hideSpinner();
+            this.showToast('Error', error.body ? error.body.message : '', 'error');
+        }
+    }
+
+    //listener handler to get the context and data
+    //updates datatable
+    multpicklistChanged(event) {
+        event.stopPropagation();
+        let dataRecieved = event.detail.data;
+        console.log('dataRecieved>>', event.detail.data);
+
+        let updatedItem = { uniqueKey: dataRecieved.context, Category__c: dataRecieved.value };
+        console.log('updatedItem>>', updatedItem);
+        console.log('selectedRowsToInsert1>>', this.selectedRowsToInsert);
+
+        this.updateDraftValues(updatedItem);
+        console.log('selectedRowsToInsert1>>', this.selectedRowsToInsert);
+
+        this.updateDataValues(updatedItem);
+    }
+
+    updateDraftValues(updateItem) {
+        this.selectedRowsToInsert.forEach(item => {
+            if (item.uniqueKey === updateItem.uniqueKey) {
+                item.cateogry = updateItem.Category__c;
+            }
+        });
+    }
+
+    updateDataValues(updateItem) {
+        let copyData = JSON.parse(JSON.stringify(this.selectedRowsToInsert));
+        copyData.forEach(item => {
+            if (item.uniqueKey === updateItem.uniqueKey) {
+                for (let field in updateItem) {
+                    item[field] = updateItem[field];
+                }
+            }
+        });
+
+        this.selectedRowsToInsert = [...copyData];
+    }
+
+    handleFilter(event) {
+        this.isFilterVisible = !this.isFilterVisible;
+        const layoutItem = this.template.querySelector('[data-id="layoutItem"]');
+        if (layoutItem) {
+            if (this.isFilterVisible) {
+                layoutItem.size = 7;
+            } else if (!this.isFilterVisible) {
+                layoutItem.size = 12;
+            }
+        }
+    }
+
+    handleRowSelection(event) {
+        this.selectedRows = event.detail.selectedRows;
+        this.selectedRowsIds = this.selectedRows.map(item => item.Id);
+    }
+
+    handleSearch(event) {
+        const searchKey = event.target.value.toLowerCase();
+        if (searchKey && searchKey.length > 0) {
+            if (this.filteredData) {
+                let searchRecords = [];
+                for (let record of this.filteredData) {
+                    let valuesArray = Object.values(record);
+                    for (let val of valuesArray) {
+                        let strVal = String(val);
+                        if (strVal) {
+                            if (strVal.toLowerCase().includes(searchKey)) {
+                                searchRecords.push(record);
+                                break;
+                            }
+                        }
+                    }
+                }
+                this.filteredData = searchRecords;
+            }
+        } else {
+            this.handleApply();
+        }
+    }
+
+    handleRowLevelAct(event) {
+        const recordId = event.detail.row.Id;
+        this.selectedRowsIds = this.selectedRowsIds.filter(id => id !== recordId);
+        this.selectedRows = this.selectedRows.filter(record => record.Id !== recordId);
+    }
+
+    handleCellChange(event) {
+        let draftValues = event.detail.draftValues;
+        let id = draftValues[0].Id;
+        this.selectedRows = this.selectedRows.map(record => {
+            if (record.Id === id && draftValues[0].hasOwnProperty('Quantity')) {
+                record.Quantity = draftValues[0].Quantity;
+            }
+            return record;
+        });
+    }
+
+    //handler to handle cell changes & update values in draft values
+    handleCellChangeForThirdScreen(event) {
+        console.log(event.detail.draftValues[0]);
+        let draftValues = event.detail.draftValues;
+        draftValues.forEach(ele => {
+            this.updateDraftValues(ele);
+        })
+    }
+
+    handleProductCodeFilterValue(event) {
+        this.productCodeFilterValue = event.detail.value;
+        this.enableIsApplyButton();
+    }
+
+    handleProductFamilyFilterValue(event) {
+        this.productFamilyFilterValue = event.detail.value;
+        this.enableIsApplyButton();
+    }
+
+    get isProductCodeClearVisible() {
+        return this.productCodeFilterValue && this.productCodeFilterValue.length > 0 ? true : false;
+    }
+
+    get isProductFamilyClearVisible() {
+        return this.productFamilyFilterValue && this.productFamilyFilterValue.length > 0 ? true : false;
+    }
+
+    clearProductCodeFilterValue() {
+        this.productCodeFilterValue = '';
+        this.enableIsApplyButton();
+    }
+
+    clearProductFamilyFilterValue() {
+        this.productFamilyFilterValue = [];
+        this.enableIsApplyButton();
+    }
+
+    handleClearAllFilters() {
+        this.clearProductCodeFilterValue();
+        this.clearProductFamilyFilterValue();
+    }
+
+    get isFilterFooterVisible() {
+        return (this.productCodeFilterValue && this.productCodeFilterValue.length > 0) || (this.productFamilyFilterValue && this.productFamilyFilterValue.length > 0) || !this.isApplyDisable ? true : false;
+    }
+
+    handleApply() {
+        // this.showSpinner();
+        this.isApplyDisable = true;
+        console.log('enter=', this.filteredData);
+        
+        this.filteredData = JSON.parse(JSON.stringify(this.masterdData));
+        if (this.productCodeFilterValue && this.productCodeFilterValue.length > 0) {
+            this.filteredData = this.filteredData.filter(Laundry_Item__c => Laundry_Item__r.Item__c.includes(this.productCodeFilterValue));
+        }
+        /*
+        if (this.productFamilyFilterValue && this.productFamilyFilterValue.length > 0) {
+            this.filteredData = this.filteredData.filter(product => this.productFamilyFilterValue.includes(product.Family) || (this.productFamilyFilterValue.includes("None") && (!product.Family || product.Family === "")));
+        }*/
+        this.resetSelectedData();
+        this.hideSpinner();
+    }
+
+    resetSelectedData() {
+        this.selectedRows = [];
+        this.selectedRowsIds = [];
+    }
+
+    enableIsApplyButton() {
+        this.isApplyDisable = false;
+    }
+
+    handleCancel() {
+        this.closeModal();
+    }
+
+    handleNext1() {
+        this.showFirstScreen = false;
+        this.showSecondScreen = true;
+        this.showThirdScreen = false;
+    }
+
+    handleNext2() {
+        console.log('selectedRows1>>', this.selectedRows);
+        if (!this.isQuantityPopulated(this.selectedRows)) {
+            this.showToast('Error', 'Required field missing: Quantity', 'error');
+            return;
+        }
+
+        this.selectedRowsToInsert = this.repeatRecords(this.selectedRows);
+        console.log('selectedRowsToInsert>>', this.selectedRowsToInsert);
+
+        this.showFirstScreen = false;
+        this.showSecondScreen = false;
+        this.showThirdScreen = true;
+    }
+
+    isQuantityPopulated(jsonArray) {
+        for (let obj of jsonArray) {
+            if (!obj.hasOwnProperty('Quantity') || obj.Quantity === null || obj.Quantity === undefined || obj.Quantity === '') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    repeatRecords(inputData) {
+        let result = [];
+        inputData.forEach(record => {
+            const quantity = parseInt(record.Quantity, 10); // Convert Quantity to integer
+            for (let i = 1; i <= quantity; i++) {
+                // Clone the object and add uniqueKey or sequenceNumber to ensure uniqueness
+                const newRecord = { ...record };
+                newRecord.Quantity = '1';
+                newRecord.sequenceNumber = i;  // Add a sequence number to make it unique
+                newRecord.uniqueKey = `${record.Id}_${i}`;  // Add a unique key as a combination of Id and index
+                newRecord.caseId = this.recordId;
+                result.push(newRecord);
+            }
+        });
+        return result;
+    }
+
+    handleCancelEdit() {
+        this.closeModal();
+    }
+
+    // async handleSave() {
+    //     let isValid = true;
+    //     this.selectedRows.forEach(record => {
+    //         if (!record.Quantity || parseFloat(record.Quantity) === 0 || !record.SalesPrice) {
+    //             isValid = false;
+    //         }
+    //     });
+
+    //     if (!isValid) {
+    //         this.showToast('Error', 'Required fields missing: Quantity or Sales Price.', 'error');
+    //         return;
+    //     }
+
+    //     if (!this.selectedRows || this.selectedRows.length === 0) {
+    //         this.closeModal();
+    //         return;
+    //     }
+
+    //     this.showSpinner();
+    //     try {
+    //         console.log('selectedRows>>', JSON.stringify(this.selectedRows));
+
+    //         const result = await saveLineItems({ 
+    //             jsonString: JSON.stringify(this.selectedRows), 
+    //             recordId: this.recordId 
+    //         });
+    //         this.showToast('Success', 'Items saved successfully', 'success');
+    //         // this.reloadPage();
+    //     } catch (error) {
+    //         const errorMessage = error.body && error.body.message ? error.body.message : 'An error occurred while saving the records';
+    //         this.showToast('Error', errorMessage, 'error');
+    //     } finally {
+    //         this.hideSpinner();
+    //     }
+    // }
+
+    handleSave() {
+        console.log('selectedRowsToInsert1--->', this.selectedRowsToInsert);
+
+        // Validate Category__c field
+        const invalidRows = this.selectedRowsToInsert.filter(row => !row.Category__c || row.Category__c.trim() === '');
+
+        if (invalidRows.length > 0) {
+            this.showToast('Error', 'Category field cannot be empty.', 'error');
+            return;
+        }
+
+        // Prepare data for Apex
+        const lineItems = this.selectedRowsToInsert.map(row => ({
+            sobjectType: 'Laundry_Line_item__c',
+            Case__c: row.caseId,
+            Laundry_Item__c: row.Id,
+            Name: row.Name,
+            Category__c: row.Category__c
+        }));
+
+        // Call Apex method to insert records
+        insertLaundryLineItems({ lineItems })
+            .then(() => {
+                this.showToast('Success', 'Laundry line items inserted successfully.', 'success');
+            })
+            .catch(error => {
+                this.showToast('Error', error.body?.message || 'An error occurred.', 'error');
+            });
+    }
+
+    showToast(title, message, variant) {
+        this.dispatchEvent(new ShowToastEvent({ title, message, variant }));
+    }
+    //rp
+    isCategoryPopulated(jsonArray) {
+        for (let obj of jsonArray) {
+            if (!obj.hasOwnProperty('Category') || obj.Category === null || obj.Category === undefined || obj.Category === '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+
+
+
+    //
+    get isNextDisable() {
+        return this.selectedRows && this.selectedRows.length > 0 ? false : true;
+    }
+
+    reloadPage() {
+        window.location.reload();
+    }
+
+    handleBack1() {
+        this.showFirstScreen = true;
+        this.showSecondScreen = false;
+        this.showThirdScreen = false;
+    }
+
+    handleBack2() {
+        this.showFirstScreen = false;
+        this.showSecondScreen = true;
+        this.showThirdScreen = false;
+    }
+
+    showSpinner() {
+        this.isLoading = true;
+    }
+
+    hideSpinner() {
+        this.isLoading = false;
+    }
+
+    showToast(title, message, variant) {
+        this.dispatchEvent(new ShowToastEvent({
+            title: title,
+            message: message,
+            variant: variant,
+            mode: 'dismissable'
+        }));
+    }
+
+    closeModal() {
+        this.dispatchEvent(new CloseActionScreenEvent());
+    }
+}
