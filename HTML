@@ -1,0 +1,164 @@
+<template>
+    <template if:true={isLoading}>
+        <lightning-spinner alternative-text="Loading" size="medium" variant="brand"></lightning-spinner>
+    </template>
+
+    <!-- FIRST SCREEN -->
+    <template if:false={isLoading}>
+        <template if:true={showFirstScreen}>
+            <lightning-modal-header label="Add Products">
+                Price Book: Standard Price Book
+            </lightning-modal-header>
+
+            <lightning-modal-body>
+                <!-- Search Box -->
+                <lightning-layout>
+                    <lightning-layout-item size="11" padding="around-small">
+                        <lightning-input type="search" label="Search Products" variant="label-hidden"
+                            placeholder="Search Products..." onchange={handleSearch}>
+                        </lightning-input>
+                    </lightning-layout-item>
+                    <lightning-layout-item size="1" padding="around-small">
+                        <lightning-button-icon icon-name="utility:filterList" alternative-text="Show quick filters"
+                            onclick={handleFilter}>
+                        </lightning-button-icon>
+                    </lightning-layout-item>
+                </lightning-layout>
+
+                <!-- Table for Products -->
+                <div class="slds-p-top_medium">
+                    <lightning-layout multiple-rows="false">
+                        <lightning-layout-item size="12" data-id="layoutItem" padding="around-small">
+                            <lightning-datatable key-field="Id" data={filteredData} columns={firstScreenColumns}
+                                onrowselection={handleRowSelection} selected-rows={selectedRowsIds}>
+                            </lightning-datatable>
+                        </lightning-layout-item>
+
+                        <template if:true={isFilterVisible}>
+                            <lightning-layout-item size="5">
+                                <lightning-layout multiple-rows="true">
+                                    <lightning-layout-item size="12">
+                                        <lightning-layout multiple-rows="false"
+                                            class="slds-border_bottom slds-p-bottom_x-small">
+                                            <lightning-layout-item size="11">
+                                                Quick Filters
+                                            </lightning-layout-item>
+                                            <lightning-layout-item size="1">
+                                                <lightning-button-icon icon-name="utility:close" size="medium"
+                                                    class="slds-align_absolute-center" variant="bare"
+                                                    alternative-text="Close Filters" onclick={handleFilter}>
+                                                </lightning-button-icon>
+                                            </lightning-layout-item>
+                                        </lightning-layout>
+                                    </lightning-layout-item>
+
+                                    <lightning-layout-item size="10" class="slds-p-bottom_small">
+                                        <lightning-input type="text" label="Item Code"
+                                            onchange={handleProductCodeFilterValue} value={productCodeFilterValue}>
+                                        </lightning-input>
+                                    </lightning-layout-item>
+                                    <lightning-layout-item size="2" class="slds-p-bottom_small">
+                                        <template if:true={isProductCodeClearVisible}>
+                                            <lightning-button variant="base" label="Clear" title="Clear"
+                                                onclick={clearProductCodeFilterValue} class="slds-m-left_x-small">
+                                            </lightning-button>
+                                        </template>
+                                    </lightning-layout-item>
+<!--
+                                    <lightning-layout-item size="10">
+                                        <lightning-checkbox-group name="Product Family" label="Product Family"
+                                            options={familyOptions} value={productFamilyFilterValue}
+                                            onchange={handleProductFamilyFilterValue}></lightning-checkbox-group>
+                                    </lightning-layout-item>
+                                    <lightning-layout-item size="2">
+                                        <template if:true={isProductFamilyClearVisible}>
+                                            <lightning-button variant="base" label="Clear" title="Clear"
+                                                onclick={clearProductFamilyFilterValue} class="slds-m-left_x-small">
+                                            </lightning-button>
+                                        </template>
+                                    </lightning-layout-item>
+-->
+                                    <template if:true={isFilterFooterVisible}>
+                                        <lightning-layout-item size="12" class="slds-p-top_small">
+                                            <lightning-modal-footer>
+                                                <lightning-layout multiple-rows="false">
+                                                    <lightning-layout-item size="3">
+                                                        <lightning-button class="slds-float_left" label="Cancel"
+                                                            onclick={handleClearAllFilters}>
+                                                        </lightning-button>
+                                                    </lightning-layout-item>
+                                                    <lightning-layout-item size="6">
+                                                        <lightning-button variant="base" label="Clear All Filters"
+                                                            title="Clear All Filters" onclick={handleClearAllFilters}
+                                                            class="slds-float_left slds-p-left_x-small">
+                                                        </lightning-button>
+                                                    </lightning-layout-item>
+                                                    <lightning-layout-item size="3">
+                                                        <lightning-button label="Apply" variant="brand"
+                                                            disabled={isApplyDisable} onclick={handleApply}>
+                                                        </lightning-button>
+                                                    </lightning-layout-item>
+                                                </lightning-layout>
+                                            </lightning-modal-footer>
+                                        </lightning-layout-item>
+                                    </template>
+                                </lightning-layout>
+                            </lightning-layout-item>
+                        </template>
+                    </lightning-layout>
+                </div>
+            </lightning-modal-body>
+
+            <lightning-modal-footer>
+                <!-- Buttons -->
+                <lightning-button class="slds-p-right_x-small" label="Cancel" onclick={handleCancel}></lightning-button>
+                <lightning-button label="Next" variant="brand" onclick={handleNext1} disabled={isNextDisable}>
+                </lightning-button>
+            </lightning-modal-footer>
+        </template>
+
+        <!-- SECOND SCREEN -->
+        <template if:true={showSecondScreen}>
+            <lightning-modal-header label="Edit Selected Products"></lightning-modal-header>
+            <lightning-modal-body>
+                <lightning-datatable key-field="Id" data={selectedRows} columns={secondScreenColumns}
+                    suppress-bottom-bar="true" oncellchange={handleCellChange}
+                    class="slds-p-left_small slds-p-right_small" hide-checkbox-column onrowaction={handleRowLevelAct}>
+                </lightning-datatable>
+            </lightning-modal-body>
+            <lightning-modal-footer>
+                <div class="slds-float_left">
+                    <lightning-button label="Back" onclick={handleBack1}>
+                    </lightning-button>
+                </div>
+                <lightning-button class="slds-p-right_x-small" label="Cancel" onclick={handleCancelEdit}>
+                </lightning-button>
+                <lightning-button label="Next" variant="brand" onclick={handleNext2}></lightning-button>
+            </lightning-modal-footer>
+        </template>
+
+        <!-- THIRD SCREEN -->
+        <template if:true={showThirdScreen}>
+            <lightning-modal-header label="Add Category & Save Records!"></lightning-modal-header>
+            <lightning-modal-body>
+                <!-- <lightning-datatable key-field="uniqueKey" data={selectedRowsToInsert} columns={thirdScreenColumns} suppress-bottom-bar="true"
+                    oncellchange={handleCellChange} class="slds-p-left_small slds-p-right_small" hide-checkbox-column
+                    onrowaction={handleRowLevelAct}>
+                </lightning-datatable> -->
+                <c-l-w-c-custom-datatable-type key-field="uniqueKey" data={selectedRowsToInsert} columns={thirdScreenColumns}
+                    onpicklistchanged={multpicklistChanged} onvalueselect={handleSelection} draft-values={draftValues}
+                    oncellchange={handleCellChangeForThirdScreen} onsave={handleSave} oncancel={handleCancel} suppress-bottom-bar="true"> 
+                </c-l-w-c-custom-datatable-type>
+            </lightning-modal-body>
+            <lightning-modal-footer>
+                <div class="slds-float_left">
+                    <lightning-button label="Back" onclick={handleBack2}>
+                    </lightning-button>
+                </div>
+                <lightning-button class="slds-p-right_x-small" label="Cancel" onclick={handleCancelEdit}>
+                </lightning-button>
+                <lightning-button label="Save" variant="brand" onclick={handleSave}></lightning-button>
+            </lightning-modal-footer>
+        </template>
+    </template>
+</template>
