@@ -1,0 +1,47 @@
+@SuppressWarnings('PMD.ApexCRUDViolation,PMD.CognitiveComplexity')
+public with sharing class CustomAddProductsHandler {
+    @AuraEnabled(cacheable=true)
+    public static List<Laundry_Item__c> getLaundryItemList() {
+        return [SELECT Id, Name, Item__c FROM Laundry_Item__c WHERE Item__c != null WITH SECURITY_ENFORCED];
+    }
+    
+     @AuraEnabled
+    public static void insertLaundryLineItems(String jsonData) {
+        if (String.isEmpty(jsonData)) {
+            throw new AuraHandledException('No JSON.');
+        }
+
+        try {
+            Object deserializedData = JSON.deserializeUntyped(jsonData);
+            if (!(deserializedData instanceof List<Object>)) {
+                throw new AuraHandledException('Invalid data format.');
+            }
+
+            List<Object> dataList = (List<Object>) deserializedData;
+            List<Laundry_Line_item__c> recordsToInsert = new List<Laundry_Line_item__c>();
+
+            for (Object obj : dataList) {
+                if (!(obj instanceof Map<String, Object>)) {
+                    throw new AuraHandledException('Invalid data structure.');
+                }
+
+                Map<String, Object> row = (Map<String, Object>) obj;
+                Laundry_Line_item__c record = new Laundry_Line_item__c();
+                record.Case__c = (String) row.get('caseId');
+                record.Laundry_Item__c = (String) row.get('Id');
+                record.Name = (String) row.get('Name');
+                record.Category__c = (String) row.get('Category__c');
+
+                recordsToInsert.add(record);
+            }
+
+            if (!recordsToInsert.isEmpty()) {
+                insert recordsToInsert;
+            }
+        } catch (Exception e) {
+            system.debug('error message' + e.getMessage());
+            system.debug('error Line' + e.getLineNumber());
+            throw new AuraHandledException('Error-->: ' + e.getMessage());
+        }
+    }
+}
